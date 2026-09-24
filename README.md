@@ -1,206 +1,164 @@
-# Taller de IaC: crear una VM en VMware Workstation con un script parametrizado
+# Taller de IaC: construya un script `.cmd` que cree una VM en VMware Workstation
 
 ![Plataforma](https://img.shields.io/badge/host-Windows-0078D6)
-![VMware](https://img.shields.io/badge/VMware-Workstation%20Pro-607078)
-![Script](https://img.shields.io/badge/script-.cmd-4EAA25)
-![Licencia](https://img.shields.io/badge/licencia-MIT-blue)
+![VMware](https://img.shields.io/badge/VMware-Workstation-607078)
+![Entrega](https://img.shields.io/badge/entrega-GitHub-181717)
 
-Versión mejorada del taller *“Creación de VM en ESXi por consola”*. En lugar de teclear comandos uno por uno, la infraestructura (una máquina virtual) se **describe con parámetros** y se **construye con un solo script repetible**. Esa es la idea central de la **Infraestructura como Código (IaC)**: la misma definición produce siempre el mismo resultado.
+Este taller es la evolución del taller *“Creación de VM en ESXi por consola”*. Allí se ejecutaban comandos uno por uno; aquí usted **construirá un script parametrizado que crea la máquina virtual por usted**, siempre de la misma manera. Esa es la idea de la **Infraestructura como Código (IaC)**: la infraestructura se describe y se crea con código repetible, versionable y auditable.
 
-> **Estado de las pruebas:** los scripts fueron revisados línea por línea, pero su ejecución real sobre Windows con VMware Workstation debe validarla quien los use. Empiece siempre con `--dry-run`.
+> **Este enunciado no incluye comandos ni ejemplos de solución.** Encontrar las herramientas, los formatos de archivo y la sintaxis correcta hace parte del aprendizaje. Investigue, pruebe y **explique con sus propias palabras** lo que descubra.
 
-## Contenido del repositorio
+## 1. Objetivo
+
+Construir un script para `cmd.exe` (`crear-vm.cmd`) que, a partir de parámetros, cree y opcionalmente encienda una máquina virtual en **VMware Workstation** instalado en Windows, y documentar la investigación y las pruebas realizadas.
+
+**Resultados de aprendizaje**
+
+- Explicar qué archivos componen una máquina virtual de VMware y qué función cumple cada uno.
+- Automatizar la creación de una VM usando únicamente las utilidades de línea de comandos que incluye VMware Workstation.
+- Aplicar buenas prácticas de IaC: parametrización, validación de entradas, idempotencia, simulación y control de versiones.
+- Documentar y sustentar el trabajo con fuentes confiables en formato APA 7.
+
+## 2. Restricciones
+
+1. El script debe ser un archivo `.cmd` o `.bat` (sin PowerShell, Python ni otros lenguajes).
+2. Solo puede usar comandos propios de Windows y las utilidades de línea de comandos **incluidas con VMware Workstation**.
+3. No se permite editar a mano el archivo de configuración de la VM: **debe generarlo el script**.
+4. El script no debe contener rutas personales fijas (por ejemplo, su nombre de usuario). Use variables de entorno o parámetros.
+5. El script no debe hacer preguntas interactivas durante la creación (todo entra por parámetros).
+6. Todo el trabajo se entrega en un repositorio de **GitHub** (ver sección 8).
+
+## 3. Requisitos funcionales
+
+El script debe reproducir, adaptados a Workstation, los pasos del taller ESXi. Para cada uno, **usted decide qué comando lo resuelve**:
+
+| # | Paso del taller original | Requisito para su script |
+|---|---|---|
+| 1 | Verificar el datastore | Verificar que las herramientas de VMware existan, que los parámetros sean válidos y que el archivo ISO (si se indica) exista. |
+| 2 | Crear la carpeta de la VM | Crear la carpeta destino de la VM (con el nombre de la VM). |
+| 3 | Crear el disco virtual | Crear un disco virtual del tamaño indicado; por defecto **de crecimiento dinámico**. |
+| 4 | Crear el archivo de configuración | Generar el archivo de configuración de la VM a partir de los parámetros (ver 3.2). |
+| 5 | Registrar la VM | Investigue si Workstation requiere “registrar” una VM y qué equivale a ese paso. Explíquelo en su informe. |
+| 6 | Encender la VM | Encender la VM únicamente cuando se pida. |
+| 7 | Validar | Comprobar y mostrar si la VM quedó creada y, si se encendió, si está en ejecución. |
+
+### 3.1 Parámetros de línea de comandos
+
+El script debe aceptar **exactamente estos nombres de parámetro** (así se podrá probar su trabajo de forma automática):
+
+| Parámetro | Valor por defecto | Requisito |
+|---|---|---|
+| `--name NOMBRE` | `VM_Taller` | Nombre de la VM. Solo letras, números, punto, guion y guion bajo. Nombra la carpeta y los archivos. |
+| `--dir RUTA` | Carpeta *Documents\Virtual Machines* del usuario actual | Carpeta base donde se crea la carpeta de la VM. |
+| `--iso RUTA` | *(ninguno)* | Imagen ISO de instalación. Si se indica y no existe, el script debe fallar. |
+| `--cpus N` | `2` | Número de procesadores virtuales (entero positivo). |
+| `--mem MB` | `2048` | Memoria RAM en MB (entero positivo). |
+| `--disk GB` | `20` | Tamaño del disco en GB (entero positivo). |
+| `--net MODO` | `nat` | Modo de red: `nat`, `bridged` o `hostonly`. |
+| `--start` | *(desactivado)* | Enciende la VM al terminar. |
+| `--dry-run` | *(desactivado)* | Simula: muestra lo que haría, **sin crear ni modificar nada en disco**. |
+| `--force` | *(desactivado)* | Permite recrear una VM que ya existe. |
+| `-h`, `--help` | | Muestra la ayuda de uso y termina. |
+
+El sistema operativo invitado por defecto debe ser un **Ubuntu de 64 bits**.
+
+### 3.2 Contenido mínimo de la VM generada
+
+Investigue el formato del archivo de configuración de VMware y asegúrese de que la VM incluya, como mínimo: nombre visible, sistema operativo invitado, memoria, procesadores, el disco virtual creado, una unidad de CD/DVD apuntando a la ISO (si se indicó) y un adaptador de red en el modo pedido.
+
+### 3.3 Comportamiento esperado
+
+- **Validación de entradas:** rechazar valores no válidos *antes* de crear nada, con un mensaje claro.
+- **Idempotencia segura:** si la VM ya existe, el script se detiene sin modificarla, salvo que se use `--force`. Con `--force`, no debe actuar sobre una VM que esté encendida.
+- **Simulación:** con `--dry-run` no debe quedar ningún archivo nuevo en la carpeta de la VM.
+- **Ayuda:** `--help` documenta todos los parámetros.
+- **Mensajes:** el script informa el progreso paso a paso.
+- **Códigos de salida:** `0` = todo correcto · `1` = falló la ejecución · `2` = parámetros inválidos.
+
+## 4. Pruebas de aceptación
+
+Su script será evaluado con estas pruebas. Ejecútelas usted mismo y adjunte la evidencia.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| T1 | `--help` | Muestra la ayuda; código de salida `0`. |
+| T2 | `--name prueba --dry-run` | Muestra los pasos; no crea archivos; código `0`. |
+| T3 | `--name "mi vm"` | Rechaza el nombre; código `2`. |
+| T4 | `--cpus 0` y `--mem abc` | Rechaza los valores; código `2`. |
+| T5 | `--net wifi` | Rechaza el modo de red; código `2`. |
+| T6 | `--iso` con una ruta inexistente | Falla antes de crear nada; código `2`. |
+| T7 | Creación real con ISO | Existe la carpeta con el archivo de configuración y el disco; **la VM abre correctamente en Workstation**. |
+| T8 | Repetir T7 tal cual | Se detiene sin modificar la VM; código `1`. |
+| T9 | Repetir T7 con `--force` | Recrea la VM. |
+| T10 | Creación real con `--start` | La VM queda encendida y el script lo comprueba. |
+| T11 | Parámetros no por defecto (`--cpus 4 --mem 4096 --disk 30 --net bridged`) | La VM generada refleja esos valores. |
+
+## 5. Guía de investigación (preguntas, no respuestas)
+
+Responda estas preguntas en su informe con sus propias palabras y con fuentes citadas:
+
+1. ¿Qué archivos forman una VM de VMware Workstation y para qué sirve cada extensión?
+2. ¿Qué utilidades de línea de comandos incluye VMware Workstation? ¿Para qué sirve cada una y dónde se instalan?
+3. ¿Qué tipos de disco virtual existen? ¿En qué se diferencia un disco de crecimiento dinámico de uno preasignado? ¿A qué equivale cada uno en ESXi?
+4. ¿Cómo se estructura el archivo de configuración de una VM? ¿Qué significan los pares `clave = "valor"`?
+5. ¿Qué diferencia hay entre los modos de red NAT, puente (*bridged*) y solo-anfitrión (*host-only*)?
+6. ¿Qué es la idempotencia y por qué es deseable en IaC?
+7. ¿Cómo se leen parámetros, se validan valores y se devuelven códigos de salida en un archivo por lotes de Windows?
+8. ¿Por qué los archivos por lotes son sensibles al formato de fin de línea y a la codificación de caracteres?
+9. ¿Qué diferencias hay entre lo que hizo en ESXi y lo que hace ahora en Workstation? ¿Qué pasos desaparecen o cambian y por qué?
+10. ¿Qué ventajas y limitaciones tiene su script frente a herramientas como Terraform o Vagrant?
+
+## 6. Informe (formato APA 7)
+
+Igual que en el taller original, **explique cada paso realizado e incluya investigación propia**. Use APA 7 en todo el documento: citas en el texto, referencias, y figuras y tablas numeradas con título. Estructura sugerida:
+
+1. Portada e introducción
+2. Marco teórico (respuestas a la guía de investigación)
+3. Diseño del script (diagrama de flujo o tabla de pasos)
+4. Implementación: explicación de cada bloque del script
+5. Pruebas: tabla con T1–T11 y capturas de pantalla como figuras
+6. Conclusiones y reflexión
+7. Referencias
+
+## 7. Rúbrica (100 puntos)
+
+| Criterio | Puntos |
+|---|---|
+| **Funcionalidad**: pruebas T1–T11 superadas | 40 |
+| **Investigación y explicación**: respuestas a la guía y explicación de cada paso | 25 |
+| **Calidad del script**: comentarios, estructura, mensajes claros, sin rutas fijas, uso correcto de validaciones | 15 |
+| **Informe APA 7**: citas, referencias, figuras y tablas | 10 |
+| **GitHub**: repositorio ordenado, README de uso, commits significativos, `.gitignore` | 10 |
+| **Bonus (hasta +10)**: opción para cargar parámetros desde un archivo; script inverso que elimine la VM; opción de disco preasignado; mensajes de error con sugerencias | +10 |
+
+## 8. Entrega en GitHub
+
+Cree un repositorio propio (`taller-iac-vmware-workstation-SU_APELLIDO`) con esta estructura:
 
 ```text
-taller-iac-vmware-workstation/
-├── crear-vm.cmd              # Crea la VM (carpeta + disco + VMX + encendido opcional)
-├── eliminar-vm.cmd           # Destruye la VM (operación inversa)
-├── ejemplos/
-│   ├── ubuntu-server.vars    # Definición declarativa de una VM (CLAVE=VALOR)
-│   └── laboratorio-ligero.vars
-├── .gitignore                # Evita subir discos, ISOs y logs
-├── .gitattributes            # Fuerza finales de línea CRLF en los .cmd
-├── LICENSE
-└── README.md
+.
+├── crear-vm.cmd        # su script
+├── README.md           # cómo usar su script (parámetros, ejemplos, requisitos)
+├── informe/            # informe en PDF con formato APA 7
+├── evidencias/         # capturas de las pruebas T1–T11
+├── .gitignore          # NO suba discos virtuales, ISOs ni logs
+└── .gitattributes      # mantenga finales de línea CRLF en los .cmd
 ```
 
-## Requisitos
+Requisitos de entrega:
 
-| Requisito | Detalle |
-|---|---|
-| Sistema anfitrión | Windows 10/11 con `cmd.exe` |
-| Hipervisor | VMware Workstation Pro (Pro o Player con `vmrun`/`vmware-vdiskmanager` instalados) |
-| ISO | Un archivo `.iso` de instalación accesible desde el equipo (opcional, pero recomendado) |
-| Ruta de herramientas | `C:\Program Files (x86)\VMware\VMware Workstation` (se puede cambiar con `--vmware-dir`) |
+- Al menos **5 commits** con mensajes descriptivos que muestren su avance.
+- **Prohibido** subir archivos `.vmdk`, `.iso`, `.nvram` o cualquier archivo pesado de VM.
+- Compartir la URL del repositorio en la plataforma del curso antes de la fecha límite.
 
-## Inicio rápido
+## 9. Sugerencia de trabajo
 
-```bat
-:: 1. Ver la ayuda
-crear-vm.cmd --help
+1. Cree **una VM a mano** desde la interfaz gráfica de Workstation y observe qué archivos se generan.
+2. Averigüe qué utilidades de línea de comandos existen y pruébelas de forma aislada.
+3. Empiece por un script mínimo que cree solo el disco; agregue un paso a la vez.
+4. Implemente `--dry-run` y las validaciones desde el principio: le ahorrarán borrar VMs de prueba.
+5. Haga un commit cada vez que un paso funcione.
 
-:: 2. Simular (NO crea nada; muestra comandos y el .vmx que se generaría)
-crear-vm.cmd --name srv01 --iso C:\ISOs\ubuntu-24.04-live-server-amd64.iso --dry-run
+## 10. Referencias de partida
 
-:: 3. Crear de verdad y encender
-crear-vm.cmd --name srv01 --iso C:\ISOs\ubuntu-24.04-live-server-amd64.iso --start
-
-:: 4. Destruir cuando termine el laboratorio
-eliminar-vm.cmd --name srv01
-```
-
-## Parámetros de `crear-vm.cmd`
-
-| Parámetro | Defecto | Descripción |
-|---|---|---|
-| `--name NOMBRE` | `VM_Taller` | Nombre de la VM; también nombra la carpeta, el `.vmx` y el `.vmdk`. Solo letras, números, `.`, `-`, `_`. |
-| `--dir RUTA` | `Documents\Virtual Machines` | Carpeta base donde se crea `RUTA\NOMBRE\`. |
-| `--iso RUTA.iso` | *(ninguno)* | ISO de instalación. Sin ella se usa la unidad óptica física. |
-| `--os GUEST` | `ubuntu-64` | Valor `guestOS` del VMX (p. ej. `debian12-64`, `windows11-64`). |
-| `--cpus N` | `2` | vCPU, de 1 a 32. |
-| `--mem MB` | `2048` | RAM en MB (512–262144, múltiplo de 4). |
-| `--disk GB` | `20` | Tamaño del disco virtual en GB. |
-| `--net nat\|bridged\|hostonly` | `nat` | Modo de red. |
-| `--nic e1000\|e1000e\|vmxnet3` | `e1000e` | Adaptador de red virtual. |
-| `--firmware bios\|efi` | `bios` | Firmware de arranque. |
-| `--hw N` | `16` | `virtualHW.version` (compatibilidad de hardware virtual). |
-| `--prealloc` | *(no)* | Disco preasignado (tipo 2) en lugar de creciente (tipo 0). |
-| `--start` | *(no)* | Enciende la VM al terminar. |
-| `--nogui` | *(no)* | Al encender no abre la ventana de VMware. |
-| `--force` | *(no)* | Recrea la VM si ya existe (no funciona si está encendida). |
-| `--dry-run` | *(no)* | Simula: imprime comandos y el VMX en pantalla, sin tocar el disco. |
-| `--vars ARCHIVO` | *(ninguno)* | Carga parámetros desde un archivo `CLAVE=VALOR`. |
-| `--vmware-dir RUTA` | ruta estándar | Carpeta de instalación de VMware Workstation. |
-| `-h`, `--help` | | Muestra la ayuda. |
-
-**Códigos de salida:** `0` correcto · `1` fallo en la ejecución · `2` error en los argumentos (útil para automatizar con otros scripts).
-
-### Definir la VM en un archivo (`--vars`)
-
-Es la forma más cercana a IaC: la VM queda descrita en un archivo que se versiona en Git.
-
-```ini
-# ejemplos/ubuntu-server.vars
-VM_NAME=ubuntu-server
-ISO=C:\ISOs\ubuntu-24.04-live-server-amd64.iso
-CPUS=2
-MEM_MB=4096
-DISK_GB=40
-NET=nat
-```
-
-```bat
-crear-vm.cmd --vars ejemplos\ubuntu-server.vars --start
-:: Un parámetro posterior sobrescribe el archivo:
-crear-vm.cmd --vars ejemplos\ubuntu-server.vars --name srv02 --mem 8192
-```
-
-Claves válidas: `VM_NAME`, `DIR`, `ISO`, `OS`, `CPUS`, `MEM_MB`, `DISK_GB`, `NET`, `NIC`, `FIRMWARE`, `HWVER`. Sin espacios alrededor del `=`.
-
-## Qué hace cada paso (y equivalencia con el taller ESXi)
-
-El script imprime los pasos `[1/7]`…`[7/7]`. Esta tabla compara con el taller original:
-
-| Paso | Taller original (ESXi) | Este taller (Workstation) | Qué ocurre |
-|---|---|---|---|
-| 1 | `esxcli storage filesystem list` (verificar datastore) | Verificación de herramientas y parámetros | Comprueba que existan `vmrun.exe` y `vmware-vdiskmanager.exe`, valida cada parámetro y detecta si la VM ya existe. |
-| 2 | `mkdir` en `/vmfs/volumes/...` | `mkdir` en `--dir\NOMBRE` | Crea la carpeta que contendrá todos los archivos de la VM. |
-| 3 | `vmkfstools -c 20G -d thin` | `vmware-vdiskmanager -c -s 20GB -a lsilogic -t 0` | Crea el disco virtual. Tipo `0` = archivo creciente (equivale a *thin*); `--prealloc` usa el tipo `2` (equivale a *thick*). |
-| 4 | Escribir el VMX a mano | El script **genera** el `.vmx` con tus parámetros | Sin errores de tipeo ni nombres inconsistentes. |
-| 5 | `vim-cmd solo/registervm` | Validación de archivos | En Workstation no se “registra”: la VM se identifica por la ruta de su `.vmx`. Para verla en la biblioteca use *Archivo → Abrir*. |
-| 6 | `vim-cmd vmsvc/power.on ID` | `vmrun -T ws start "ruta.vmx" gui` | Enciende la VM (solo con `--start`). |
-| 7 | `vim-cmd vmsvc/power.getstate ID` | `vmrun -T ws list` | Confirma que la VM aparece entre las máquinas en ejecución. |
-
-### Mejoras respecto al taller original
-
-- **Parametrizado:** nombre, CPU, RAM, disco, red e ISO cambian sin editar el script.
-- **Consistente:** el original mezclaba `sunombre.vmx`, `VM_Taller` y `Nombre_datastore`/`datastore_nombre`; aquí un solo nombre gobierna todos los archivos.
-- **Validación de entradas:** rechaza nombres, rangos y valores de red inválidos antes de tocar el disco.
-- **Modo simulación (`--dry-run`):** permite ver qué haría el script, ideal para explicar cada paso.
-- **Idempotencia razonable:** si la VM ya existe, se detiene con un mensaje; con `--force` la recrea.
-- **Operación inversa:** `eliminar-vm.cmd` cierra el ciclo crear → usar → destruir.
-- **Definición declarativa:** `--vars` permite versionar la VM en Git.
-- **Códigos de salida** claros para integrarlo con otros scripts.
-
-## Archivo VMX generado
-
-Con los valores por defecto, el script produce algo equivalente a:
-
-```ini
-.encoding = "windows-1252"
-config.version = "8"
-virtualHW.version = "16"
-displayName = "VM_Taller"
-guestOS = "ubuntu-64"
-firmware = "bios"
-memsize = "2048"
-numvcpus = "2"
-scsi0.present = "TRUE"
-scsi0.virtualDev = "lsilogic"
-scsi0:0.present = "TRUE"
-scsi0:0.fileName = "VM_Taller.vmdk"
-sata0.present = "TRUE"
-sata0:0.present = "TRUE"
-sata0:0.deviceType = "cdrom-image"
-sata0:0.fileName = "C:\ISOs\ubuntu.iso"
-sata0:0.startConnected = "TRUE"
-ethernet0.present = "TRUE"
-ethernet0.connectionType = "nat"
-ethernet0.virtualDev = "e1000e"
-ethernet0.addressType = "generated"
-ethernet0.startConnected = "TRUE"
-floppy0.present = "FALSE"
-usb.present = "TRUE"
-sound.present = "FALSE"
-tools.syncTime = "FALSE"
-uuid.action = "create"
-```
-
-## Actividades para el estudiante
-
-Conserve la exigencia del taller original: **explique cada paso con investigación propia y use normas APA 7** en todo el documento (citas, figuras y tablas).
-
-1. Ejecute `crear-vm.cmd ... --dry-run` y capture la salida (Figura 1). Explique qué hace cada comando y cada línea del VMX.
-2. Investigue la diferencia entre disco creciente (`-t 0`) y preasignado (`-t 2`) y elabore una tabla comparativa (Tabla 1) con espacio en disco y rendimiento.
-3. Cree la VM real con `--start`, instale el sistema y muestre la VM en ejecución (Figura 2).
-4. Repita la creación con otros parámetros (`--cpus 4 --mem 4096 --net bridged`) y compare los `.vmx`. ¿Qué cambió?
-5. Cree un archivo `.vars` propio y explique por qué versionar la definición es una práctica de IaC.
-6. Ejecute de nuevo el mismo comando **sin** `--force`: ¿qué ocurre y por qué es deseable? Luego use `--force`.
-7. Destruya la VM con `eliminar-vm.cmd` y verifique que la carpeta desapareció.
-8. Reflexión: ¿qué ventajas y qué limitaciones tiene este script frente a herramientas como Terraform o Vagrant?
-
-## Solución de problemas
-
-| Síntoma | Causa probable | Solución |
-|---|---|---|
-| `No se encontro vmrun.exe...` | VMware instalado en otra ruta | Use `--vmware-dir "D:\Ruta\VMware Workstation"` |
-| `Nombre invalido` | Espacios o símbolos en `--name` | Use solo letras, números, `.`, `-`, `_` |
-| `La VM ya existe` | Existe la carpeta/VMX | Cambie `--name` o use `--force` |
-| La VM no arranca desde la ISO | Ruta de ISO incorrecta o firmware inadecuado | Verifique `--iso`; pruebe `--firmware efi` si la ISO lo requiere |
-| Windows 11 no instala | Windows 11 exige requisitos adicionales (p. ej. TPM y arranque seguro) que este script no configura | Cree esa VM desde la interfaz gráfica de Workstation o use un SO invitado distinto |
-| Caracteres extraños | Ruta con tildes/ñ | Use rutas sin caracteres especiales |
-
-## Publicar este taller en GitHub
-
-Desde la carpeta del proyecto:
-
-```bash
-git init
-git add .
-git commit -m "Taller IaC con VMware Workstation"
-git branch -M main
-git remote add origin https://github.com/TU_USUARIO/taller-iac-vmware-workstation.git
-git push -u origin main
-```
-
-El archivo `.gitattributes` garantiza que los `.cmd` mantengan finales de línea CRLF, y `.gitignore` evita subir discos, ISOs y logs.
-
-## Referencias (APA 7)
-
-Broadcom. (s. f.). *Syntax of vmrun commands*. VMware Workstation Pro 17.0 Documentation. https://techdocs.broadcom.com/us/en/vmware-cis/desktop-hypervisors/workstation-pro/17-0/using-vmware-workstation-pro/using-the-vmrun-command-to-control-virtual-machines/running-vmrun-commands/syntax-of-vmrun-commands.html
-
-Broadcom. (s. f.). *Using Virtual Disk Manager*. VMware Workstation Pro 17.0 Documentation. https://techdocs.broadcom.com/us/en/vmware-cis/desktop-hypervisors/workstation-pro/17-0/using-vmware-workstation-pro/configuring-and-managing-devices/configuring-and-maintaining-virtual-hard-disks-1/using-virtual-disk-manager.html
-
-## Licencia
-
-[MIT](LICENSE)
+Consulte la documentación oficial de VMware Workstation Pro publicada por Broadcom (sección de uso de utilidades de línea de comandos y gestión de discos virtuales) y la documentación de Microsoft sobre `cmd` y archivos por lotes. **Búsquelas usted mismo y cítelas en APA 7**.
